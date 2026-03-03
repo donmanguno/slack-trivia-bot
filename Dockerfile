@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application source
 COPY app.py .
 COPY trivia/ trivia/
+COPY data/ data/
 
 # The SQLite database lives in /data so it can be persisted via a named volume.
 # Set DB_PATH in your environment or docker run command to override.

@@ -58,6 +58,7 @@ class ChannelRound:
     channel_id: str
     total_questions: int
     started_by: str
+    pool: QuestionPool
     state: RoundState = RoundState.IDLE
     current_question_index: int = 0
     current_question: Optional[TriviaQuestion] = None
@@ -104,7 +105,8 @@ class RoundManager:
         return r is not None and r.state != RoundState.IDLE
 
     async def start_round(
-        self, channel_id: str, user_id: str, num_questions: int = 10
+        self, channel_id: str, user_id: str, num_questions: int = 10,
+        pool: Optional[QuestionPool] = None,
     ) -> str | None:
         """Start a new round. Returns error message or None on success."""
         freeze = self._db.get_freeze(user_id, channel_id)
@@ -130,6 +132,7 @@ class RoundManager:
             channel_id=channel_id,
             total_questions=num_questions,
             started_by=user_id,
+            pool=pool if pool is not None else self._pool,
             state=RoundState.BETWEEN_QUESTIONS,
         )
         self._rounds[channel_id] = round_
@@ -242,7 +245,7 @@ class RoundManager:
             answer = round_.current_question.correct_answer if round_.current_question else "?"
             await self._post_msg(
                 channel_id,
-                f":fast_forward: *Skipped!* The answer was: *{answer}*",
+                f":fast_forward: *Skipped!* The answer was: *{answer.strip()}*",
             )
             await self._advance_round(channel_id)
             return None
@@ -260,7 +263,7 @@ class RoundManager:
             return
 
         try:
-            question = await self._pool.get_question()
+            question = await round_.pool.get_question()
         except Exception:
             logger.exception("Failed to fetch question for %s", channel_id)
             await self._post_msg(
@@ -418,7 +421,7 @@ class RoundManager:
 
         await self._post_msg(
             channel_id,
-            f":hourglass: *Time's up!* The answer was: *{answer}*",
+            f":hourglass: *Time's up!* The answer was: *{answer.strip()}*",
         )
 
         if round_.current_question_index >= round_.total_questions:

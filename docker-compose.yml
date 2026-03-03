@@ -2,12 +2,11 @@ services:
   trivia-bot:
     image: ghcr.io/donmanguno/slack-trivia-bot:latest
     # Uncomment to build from source instead of pulling the image:
-    # build: .
+    build: .
     restart: unless-stopped
     env_file: .env
     environment:
       DB_PATH: /data/trivia.db
-      TRIVIA_DEBUG: "0"
     volumes:
       - trivia-data:/data
 

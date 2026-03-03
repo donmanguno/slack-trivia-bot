@@ -10,10 +10,7 @@ from typing import Optional
 
 from slack_bolt import App
 
-from trivia.questions.base import QuestionPool
-from trivia.questions.jservice import JServiceProvider
-from trivia.questions.opentdb import OpenTDBProvider
-from trivia.questions.trivia_api import TriviaAPIProvider
+from trivia.questions import registry as source_registry
 from trivia.round import RoundManager
 from trivia.scoring.manager import ScoreManager
 from trivia.storage.database import Database
@@ -55,13 +52,10 @@ def _fire_async(coro) -> None:
 
 
 db = Database()
-question_pool = QuestionPool([
-    OpenTDBProvider(),
-    TriviaAPIProvider(),
-    JServiceProvider(),
-])
+# Fallback pool (all sources) used when no per-channel config is set
+_default_pool = source_registry.build_pool()
 score_manager = ScoreManager(db)
-round_manager = RoundManager(question_pool, score_manager, db)
+round_manager = RoundManager(_default_pool, score_manager, db)
 
 
 def _parse_command(text: str, bot_user_id: str) -> str:
@@ -118,12 +112,14 @@ def register_handlers(app: App) -> None:
                 _handle_stats(text, channel_id, user_id, say)
             elif command == "categories":
                 _handle_categories(say)
+            elif command.startswith("sources"):
+                _handle_sources(command, channel_id, say)
             elif command in ("help", ""):
                 _handle_help(say)
             else:
                 say(
-                    f"I don't recognize that command. "
-                    f"Try mentioning me with `help` to see available commands."
+                    "I don't recognize that command. "
+                    "Try mentioning me with `help` to see available commands."
                 )
         except Exception:
             logger.exception("Error handling mention in %s", channel_id)
@@ -168,6 +164,57 @@ def register_handlers(app: App) -> None:
             # (correct answers trigger a 10s sleep before next question)
             _fire_async(round_manager.handle_message(channel_id, user_id, text))
 
+    @app.action(re.compile(r"^select_sources_"))
+    def handle_checkbox_change(ack, action, body):
+        """On checkbox toggle: revert any 'Saved!' button back to 'Save',
+        preserving the user's current (unsaved) selections."""
+        ack()
+        channel_id = action["action_id"][len("select_sources_"):]
+        current = [opt["value"] for opt in action.get("selected_options", [])]
+        user_id = body["user"]["id"]
+        try:
+            view = build_app_home_view(
+                db, user_id,
+                current_selections={channel_id: current},
+            )
+            app.client.views_publish(user_id=user_id, view=view)
+        except Exception:
+            logger.exception("Failed to update App Home on checkbox change")
+
+    @app.action(re.compile(r"^save_sources_"))
+    def handle_save_sources(ack, action, body):
+        """Handle source-selection saves from the App Home checkboxes."""
+        ack()
+        # action_id format: "save_sources_{channel_id}"
+        channel_id = action["action_id"][len("save_sources_"):]
+
+        # For App Home views, state lives in body["view"]["state"]["values"],
+        # not body["state"]["values"] (which is always empty for home tabs).
+        state_values = (
+            body.get("view", {}).get("state", {}).get("values", {})
+        )
+
+        block_id = f"sources_checkboxes_{channel_id}"
+        checkbox_action_id = f"select_sources_{channel_id}"
+        checkbox_state = (
+            state_values
+                .get(block_id, {})
+                .get(checkbox_action_id, {})
+        )
+        selected = [
+            opt["value"]
+            for opt in checkbox_state.get("selected_options", [])
+        ]
+
+        db.set_channel_sources(channel_id, selected)
+        logger.info("Updated sources for %s: %s", channel_id, selected or "default (all)")
+        user_id = body["user"]["id"]
+        try:
+            view = build_app_home_view(db, user_id, saved_channel=channel_id)
+            app.client.views_publish(user_id=user_id, view=view)
+        except Exception:
+            logger.exception("Failed to refresh App Home after source save")
+
     def _handle_start(command: str, channel_id: str, user_id: str, say):
         parts = command.split()
         num_questions = 10
@@ -178,7 +225,15 @@ def register_handlers(app: App) -> None:
                 say("Please specify a valid number of questions, e.g. `start 15`")
                 return
 
-        error = _run_async(round_manager.start_round(channel_id, user_id, num_questions))
+        source_names = db.get_channel_sources(channel_id)
+        pool = source_registry.build_pool(source_names)
+        logger.info(
+            "Starting round in %s with sources: %s",
+            channel_id, source_names or "default",
+        )
+        error = _run_async(
+            round_manager.start_round(channel_id, user_id, num_questions, pool=pool)
+        )
         if error:
             say(error)
 
@@ -211,9 +266,47 @@ def register_handlers(app: App) -> None:
         say(blocks=blocks, text=f"Stats for <@{target_user}>")
 
     def _handle_categories(say):
-        categories = _run_async(question_pool.get_categories())
+        categories = _run_async(_default_pool.get_categories())
         blocks = build_categories_blocks(categories)
         say(blocks=blocks, text="Categories")
+
+    def _handle_sources(command: str, channel_id: str, say):
+        parts = command.split()
+        all_names = source_registry.ALL_SOURCE_NAMES
+
+        if len(parts) == 1:
+            # Show current config
+            active = db.get_channel_sources(channel_id)
+            lines = []
+            for name in all_names:
+                enabled = active is None or name in active
+                icon = ":white_check_mark:" if enabled else ":white_square:"
+                lines.append(f"{icon} *{source_registry.display_name(name)}* (`{name}`)")
+            status = "_(using defaults — all enabled)_" if active is None else ""
+            say(
+                f":satellite: *Question sources for this channel* {status}\n"
+                + "\n".join(lines)
+                + f"\n\nTo change: `@trivia sources <name1> <name2> ...` "
+                f"or `@trivia sources default` to reset.\n"
+                f"Available: `{'` `'.join(all_names)}`"
+            )
+        elif len(parts) >= 2 and parts[1] == "default":
+            db.set_channel_sources(channel_id, [])
+            say(":white_check_mark: Reset to default sources (all enabled).")
+        else:
+            requested = parts[1:]
+            unknown = [n for n in requested if n not in all_names]
+            if unknown:
+                say(
+                    f":x: Unknown source(s): `{'` `'.join(unknown)}`\n"
+                    f"Available: `{'` `'.join(all_names)}`"
+                )
+                return
+            db.set_channel_sources(channel_id, requested)
+            names_display = ", ".join(
+                f"*{source_registry.display_name(n)}*" for n in requested
+            )
+            say(f":white_check_mark: Sources for this channel set to: {names_display}")
 
     def _handle_help(say):
         blocks = build_help_blocks()

@@ -56,6 +56,12 @@ class Database:
                     expires_at TIMESTAMP,
                     PRIMARY KEY (user_id, channel_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS channel_sources (
+                    channel_id TEXT,
+                    source_name TEXT,
+                    PRIMARY KEY (channel_id, source_name)
+                );
             """)
 
     def add_score(self, user_id: str, channel_id: str, points: int) -> UserScore:
@@ -188,6 +194,28 @@ class Database:
                 expires_at=datetime.fromisoformat(row["expires_at"]),
             )
             return freeze if freeze.is_active else None
+
+    def get_channel_sources(self, channel_id: str) -> list[str] | None:
+        """Return the configured source names for a channel, or None if using defaults."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT source_name FROM channel_sources WHERE channel_id = ?",
+                (channel_id,),
+            ).fetchall()
+        if not rows:
+            return None
+        return [r["source_name"] for r in rows]
+
+    def set_channel_sources(self, channel_id: str, source_names: list[str]) -> None:
+        """Persist the source selection for a channel. Empty list resets to default."""
+        with self._get_conn() as conn:
+            conn.execute(
+                "DELETE FROM channel_sources WHERE channel_id = ?", (channel_id,)
+            )
+            conn.executemany(
+                "INSERT INTO channel_sources (channel_id, source_name) VALUES (?, ?)",
+                [(channel_id, name) for name in source_names],
+            )
 
     def get_all_channel_scores(self) -> dict[str, list[UserScore]]:
         """Get leaderboards for all channels (used by App Home)."""
