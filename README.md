@@ -42,6 +42,7 @@ cp .env.example .env
 | `SLACK_APP_TOKEN` | Yes | App-level token for Socket Mode (`xapp-...`) |
 | `TRIVIA_DEBUG` | No | Set to `1` for verbose debug logging |
 | `DB_PATH` | No | Path to SQLite database file (default: `trivia.db` in project root, `/data/trivia.db` in Docker) |
+| `TRIVIA_ADMIN_USERS` | No | Comma-separated Slack user IDs with admin access (e.g. `U012AB3CD,U098ZY7WX`) |
 
 ### 3. Run Locally
 
@@ -110,7 +111,8 @@ All commands are triggered by @mentioning the bot. During an active question, ty
 | `@trivia resume` | Resume a paused round |
 | `@trivia skip` | Vote to skip the current question (2 votes required) |
 | `@trivia scores` | Show the channel leaderboard (top 10) |
-| `@trivia stats [@user]` | Show stats for yourself or another user |
+| `@trivia stats` | Show your own stats |
+| `@trivia stats @user` | Show stats for another user (must be a proper @mention) |
 | `@trivia sources` | Show active question sources for this channel |
 | `@trivia sources <name> [name...]` | Set sources for this channel (e.g. `@trivia sources opentdb jeopardy`) |
 | `@trivia sources default` | Reset to all sources enabled |
@@ -156,8 +158,19 @@ Jeopardy! clue values ($200–$2000) are mapped to difficulty tiers automaticall
 
 ## App Home
 
-Open the bot's App Home tab to see:
+Open the bot's App Home tab to:
 
-- Your global stats (total score and correct answers)
-- Per-channel leaderboards (top 5 per channel)
-- Per-channel question source configuration with checkboxes — select sources and click **Save**
+- See your global stats (total score and correct answers)
+- Select a channel from the dropdown to view its leaderboard (top 10 with correct-answer counts)
+- Configure question sources for that channel with checkboxes — select sources and click **Save**; the button reverts to "Save" immediately if you change your selection again
+- *(Admin only)* Remove all data for a channel (scores, history, source config, solo-play freezes) with a confirmation prompt
+
+## Admin
+
+Set `TRIVIA_ADMIN_USERS` in your `.env` to a comma-separated list of Slack user IDs to grant admin access:
+
+```
+TRIVIA_ADMIN_USERS=U012AB3CD,U098ZY7WX
+```
+
+Admins see a **Remove channel data** button in the App Home for each selected channel. Removal is permanent and requires confirmation.

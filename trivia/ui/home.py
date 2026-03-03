@@ -4,37 +4,21 @@ from trivia.questions import registry as source_registry
 from trivia.storage.database import Database
 
 
+# ---------------------------------------------------------------------------
+# Source configuration blocks (reused from channel-filtered view)
+# ---------------------------------------------------------------------------
+
 def _source_config_blocks(
     db: Database,
-    channel_ids: list[str],
+    channel_id: str,
     saved_channel: str | None = None,
     current_selections: dict[str, list[str]] | None = None,
 ) -> list[dict]:
-    """``current_selections``: channel_id → list of selected source names reflecting
-    the user's live UI state (used to preserve unsaved edits when re-publishing)."""
-    """Build interactive source-selection blocks for each channel.
+    """Checkboxes + Save button for a single channel's source config.
 
-    ``saved_channel``: if set, that channel's Save button shows a confirmation
-    state instead of the default label.
+    ``saved_channel``: show confirmation state on the Save button.
+    ``current_selections``: live UI state to preserve unsaved edits across re-publishes.
     """
-    if not channel_ids:
-        return []
-
-    blocks: list[dict] = [
-        {"type": "divider"},
-        {
-            "type": "header",
-            "text": {"type": "plain_text", "text": ":satellite: Question Sources"},
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Configure which question sources are active per channel, then click *Save*.",
-            },
-        },
-    ]
-
     all_names = source_registry.ALL_SOURCE_NAMES
     options = [
         {
@@ -44,24 +28,31 @@ def _source_config_blocks(
         for n in all_names
     ]
 
-    for channel_id in channel_ids:
-        just_saved = channel_id == saved_channel
-        if current_selections and channel_id in current_selections:
-            # Use the live UI state so unsaved selections survive the re-publish
-            enabled_names = current_selections[channel_id]
-        else:
-            active = db.get_channel_sources(channel_id)
-            enabled_names = active if active is not None else all_names
-        initial_options = [o for o in options if o["value"] in enabled_names]
+    just_saved = channel_id == saved_channel
+    if current_selections and channel_id in current_selections:
+        enabled_names = current_selections[channel_id]
+    else:
+        active = db.get_channel_sources(channel_id)
+        enabled_names = active if active is not None else all_names
 
-        blocks.append({
+    initial_options = [o for o in options if o["value"] in enabled_names]
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": ":satellite: Question Sources"},
+        },
+        {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*<#{channel_id}>*"},
-        })
+            "text": {
+                "type": "mrkdwn",
+                "text": "Select which question sources are active for this channel, then click *Save*.",
+            },
+        },
         # Checkboxes and Save button must be in SEPARATE blocks so that Slack
         # includes the checkbox state in body["view"]["state"]["values"] when
         # the button is clicked (elements in the same block don't appear there).
-        blocks.append({
+        {
             "type": "actions",
             "block_id": f"sources_checkboxes_{channel_id}",
             "elements": [
@@ -72,8 +63,8 @@ def _source_config_blocks(
                     "initial_options": initial_options,
                 },
             ],
-        })
-        blocks.append({
+        },
+        {
             "type": "actions",
             "block_id": f"sources_save_{channel_id}",
             "elements": [
@@ -87,117 +78,178 @@ def _source_config_blocks(
                     "action_id": f"save_sources_{channel_id}",
                 },
             ],
+        },
+    ]
+
+    if just_saved:
+        active_after = db.get_channel_sources(channel_id)
+        names_display = ", ".join(
+            source_registry.display_name(n)
+            for n in (active_after if active_after is not None else all_names)
+        )
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f":white_check_mark: Sources updated: *{names_display}*",
+                }
+            ],
         })
-        if just_saved:
-            active_after = db.get_channel_sources(channel_id)
-            names_display = ", ".join(
-                source_registry.display_name(n)
-                for n in (active_after if active_after is not None else all_names)
-            )
-            blocks.append({
-                "type": "context",
-                "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f":white_check_mark: Sources updated: *{names_display}*",
-                    }
-                ],
-            })
 
     return blocks
 
 
+# ---------------------------------------------------------------------------
+# Leaderboard block for a single channel
+# ---------------------------------------------------------------------------
+
+def _leaderboard_blocks(db: Database, channel_id: str, limit: int = 10) -> list[dict]:
+    from trivia.storage.models import UserScore
+
+    scores = db.get_leaderboard(channel_id, limit=limit)
+    if not scores:
+        return [{
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "_No games played in this channel yet._"},
+        }]
+
+    MEDALS = {0: ":first_place_medal:", 1: ":second_place_medal:", 2: ":third_place_medal:"}
+    lines = []
+    for i, score in enumerate(scores):
+        medal = MEDALS.get(i, f"{i + 1}.")
+        lines.append(f"{medal} <@{score.user_id}> — *{score.total_score}* pts ({score.correct_answers} correct)")
+
+    return [{
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+    }]
+
+
+# ---------------------------------------------------------------------------
+# Main view builder
+# ---------------------------------------------------------------------------
+
 def build_app_home_view(
     db: Database,
     user_id: str,
+    selected_channel: str | None = None,
+    admin_users: set[str] | None = None,
     saved_channel: str | None = None,
     current_selections: dict[str, list[str]] | None = None,
 ) -> dict:
-    """Build the App Home tab view with global leaderboard, user stats, and source config."""
-    all_scores = db.get_all_channel_scores()
+    """Build the App Home tab view.
+
+    If ``selected_channel`` is set the view shows that channel's leaderboard
+    and source configuration. Otherwise it shows a prompt to pick a channel.
+    """
     user_global = db.get_user_global_stats(user_id)
+    is_admin = bool(admin_users and user_id in admin_users)
 
     blocks: list[dict] = [
         {
             "type": "header",
             "text": {"type": "plain_text", "text": ":game_die: Trivia Bot"},
         },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": (
-                    "Welcome to Trivia Bot! Mention me in any channel with "
-                    "`start` to begin a round, or `help` to see all commands."
-                ),
-            },
-        },
-        {"type": "divider"},
     ]
 
-    # User's own stats
+    # User global stats
     if user_global:
-        blocks.append({
-            "type": "header",
-            "text": {"type": "plain_text", "text": "Your Stats"},
-        })
         blocks.append({
             "type": "section",
             "fields": [
                 {
                     "type": "mrkdwn",
-                    "text": f":trophy: *Total Score*\n{user_global.total_score}",
+                    "text": f":trophy: *Your total score*\n{user_global.total_score} pts",
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f":white_check_mark: *Correct Answers*\n{user_global.correct_answers}",
+                    "text": f":white_check_mark: *Correct answers*\n{user_global.correct_answers}",
                 },
             ],
         })
-        blocks.append({"type": "divider"})
-
-    # Per-channel leaderboards
-    if all_scores:
-        blocks.append({
-            "type": "header",
-            "text": {"type": "plain_text", "text": "Channel Leaderboards"},
-        })
-
-        for channel_id, scores in all_scores.items():
-            top_5 = scores[:5]
-            MEDALS = {0: ":first_place_medal:", 1: ":second_place_medal:", 2: ":third_place_medal:"}
-            lines = []
-            for i, score in enumerate(top_5):
-                medal = MEDALS.get(i, f"{i + 1}.")
-                lines.append(
-                    f"{medal} <@{score.user_id}> — *{score.total_score}* pts"
-                )
-
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*<#{channel_id}>*\n" + "\n".join(lines),
-                },
-            })
     else:
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "No trivia has been played yet! Mention me in a channel with `start` to begin.",
+                "text": "Mention me in any channel with `start` to begin a trivia round!",
             },
         })
 
-    # Source config — show for every channel that has a leaderboard
-    channel_ids = list(all_scores.keys())
+    blocks.append({"type": "divider"})
+
+    # Channel selector
+    channel_picker: dict = {
+        "type": "actions",
+        "block_id": "home_channel_picker",
+        "elements": [
+            {
+                "type": "conversations_select",
+                "action_id": "select_home_channel",
+                "placeholder": {"type": "plain_text", "text": "Select a channel…"},
+                "filter": {"include": ["public", "private"], "exclude_bot_users": True},
+            }
+        ],
+    }
+    if selected_channel:
+        channel_picker["elements"][0]["initial_conversation"] = selected_channel
+    blocks.append(channel_picker)
+
+    if not selected_channel:
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "_Select a channel above to view its leaderboard and configure question sources._",
+            },
+        })
+        return {"type": "home", "blocks": blocks}
+
+    # --- Channel-specific content ---
+    blocks.append({"type": "divider"})
+
+    # Leaderboard
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": f":trophy: *Leaderboard* — <#{selected_channel}>"},
+    })
+    blocks.extend(_leaderboard_blocks(db, selected_channel))
+
+    blocks.append({"type": "divider"})
+
+    # Source configuration
     blocks.extend(_source_config_blocks(
-        db, channel_ids,
+        db, selected_channel,
         saved_channel=saved_channel,
         current_selections=current_selections,
     ))
 
-    return {
-        "type": "home",
-        "blocks": blocks,
-    }
+    # Admin: remove channel data
+    if is_admin:
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": ":warning: *Admin* — permanently delete all scores, history, and config for this channel.",
+            },
+            "accessory": {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "Remove channel data"},
+                "style": "danger",
+                "action_id": f"remove_channel_{selected_channel}",
+                "confirm": {
+                    "title": {"type": "plain_text", "text": "Remove channel data?"},
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"This will permanently delete all scores, question history, and source config for <#{selected_channel}>. This cannot be undone.",
+                    },
+                    "confirm": {"type": "plain_text", "text": "Yes, delete"},
+                    "deny": {"type": "plain_text", "text": "Cancel"},
+                    "style": "danger",
+                },
+            },
+        })
+
+    return {"type": "home", "blocks": blocks}

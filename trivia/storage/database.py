@@ -217,6 +217,14 @@ class Database:
                 [(channel_id, name) for name in source_names],
             )
 
+    def delete_channel_data(self, channel_id: str) -> None:
+        """Permanently remove all scores, history, freezes, and source config for a channel."""
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM scores WHERE channel_id = ?", (channel_id,))
+            conn.execute("DELETE FROM question_history WHERE channel_id = ?", (channel_id,))
+            conn.execute("DELETE FROM channel_sources WHERE channel_id = ?", (channel_id,))
+            conn.execute("DELETE FROM solo_play_freezes WHERE channel_id = ?", (channel_id,))
+
     def get_all_channel_scores(self) -> dict[str, list[UserScore]]:
         """Get leaderboards for all channels (used by App Home)."""
         with self._get_conn() as conn:

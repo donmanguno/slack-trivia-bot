@@ -57,6 +57,16 @@ _default_pool = source_registry.build_pool()
 score_manager = ScoreManager(db)
 round_manager = RoundManager(_default_pool, score_manager, db)
 
+# Per-user App Home channel selection (in-memory; resets on restart)
+_user_home_channel: dict[str, str] = {}
+
+# Admin user IDs allowed to remove channel data from App Home
+_admin_users: set[str] = {
+    u.strip()
+    for u in os.environ.get("TRIVIA_ADMIN_USERS", "").split(",")
+    if u.strip()
+}
+
 
 def _parse_command(text: str, bot_user_id: str) -> str:
     """Extract the command portion from an @mention message."""
@@ -79,15 +89,56 @@ def register_handlers(app: App) -> None:
 
     round_manager.set_message_handlers(post_message, post_blocks)
 
+    def _publish_home(user_id: str, **kwargs) -> None:
+        """Build and publish the App Home view for a user."""
+        selected = _user_home_channel.get(user_id)
+        view = build_app_home_view(
+            db, user_id,
+            selected_channel=selected,
+            admin_users=_admin_users,
+            **kwargs,
+        )
+        app.client.views_publish(user_id=user_id, view=view)
+
     @app.event("app_home_opened")
     def handle_app_home_opened(event, client):
         user_id = event.get("user", "")
         if event.get("tab") == "home":
             try:
-                view = build_app_home_view(db, user_id)
-                client.views_publish(user_id=user_id, view=view)
+                _publish_home(user_id)
             except Exception:
                 logger.exception("Failed to publish app home for %s", user_id)
+
+    @app.action("select_home_channel")
+    def handle_home_channel_select(ack, action, body):
+        ack()
+        user_id = body["user"]["id"]
+        channel_id = action.get("selected_conversation", "")
+        if channel_id:
+            _user_home_channel[user_id] = channel_id
+        elif user_id in _user_home_channel:
+            del _user_home_channel[user_id]
+        try:
+            _publish_home(user_id)
+        except Exception:
+            logger.exception("Failed to update App Home on channel select for %s", user_id)
+
+    @app.action(re.compile(r"^remove_channel_"))
+    def handle_remove_channel(ack, action, body):
+        ack()
+        user_id = body["user"]["id"]
+        if user_id not in _admin_users:
+            logger.warning("Non-admin %s attempted to remove channel data", user_id)
+            return
+        channel_id = action["action_id"][len("remove_channel_"):]
+        db.delete_channel_data(channel_id)
+        logger.info("Admin %s removed all data for channel %s", user_id, channel_id)
+        # Clear the selection so the home resets gracefully
+        _user_home_channel.pop(user_id, None)
+        try:
+            _publish_home(user_id)
+        except Exception:
+            logger.exception("Failed to refresh App Home after channel removal")
 
     @app.event("app_mention")
     def handle_mention(event, say, context):
@@ -109,7 +160,7 @@ def register_handlers(app: App) -> None:
             elif command == "skip":
                 _handle_skip(channel_id, user_id, say)
             elif command.startswith("stats"):
-                _handle_stats(text, channel_id, user_id, say)
+                _handle_stats(text, channel_id, user_id, bot_user_id, say)
             elif command == "categories":
                 _handle_categories(say)
             elif command.startswith("sources"):
@@ -173,11 +224,7 @@ def register_handlers(app: App) -> None:
         current = [opt["value"] for opt in action.get("selected_options", [])]
         user_id = body["user"]["id"]
         try:
-            view = build_app_home_view(
-                db, user_id,
-                current_selections={channel_id: current},
-            )
-            app.client.views_publish(user_id=user_id, view=view)
+            _publish_home(user_id, current_selections={channel_id: current})
         except Exception:
             logger.exception("Failed to update App Home on checkbox change")
 
@@ -185,33 +232,18 @@ def register_handlers(app: App) -> None:
     def handle_save_sources(ack, action, body):
         """Handle source-selection saves from the App Home checkboxes."""
         ack()
-        # action_id format: "save_sources_{channel_id}"
         channel_id = action["action_id"][len("save_sources_"):]
-
         # For App Home views, state lives in body["view"]["state"]["values"],
         # not body["state"]["values"] (which is always empty for home tabs).
-        state_values = (
-            body.get("view", {}).get("state", {}).get("values", {})
-        )
-
+        state_values = body.get("view", {}).get("state", {}).get("values", {})
         block_id = f"sources_checkboxes_{channel_id}"
-        checkbox_action_id = f"select_sources_{channel_id}"
-        checkbox_state = (
-            state_values
-                .get(block_id, {})
-                .get(checkbox_action_id, {})
-        )
-        selected = [
-            opt["value"]
-            for opt in checkbox_state.get("selected_options", [])
-        ]
-
+        checkbox_state = state_values.get(block_id, {}).get(f"select_sources_{channel_id}", {})
+        selected = [opt["value"] for opt in checkbox_state.get("selected_options", [])]
         db.set_channel_sources(channel_id, selected)
         logger.info("Updated sources for %s: %s", channel_id, selected or "default (all)")
         user_id = body["user"]["id"]
         try:
-            view = build_app_home_view(db, user_id, saved_channel=channel_id)
-            app.client.views_publish(user_id=user_id, view=view)
+            _publish_home(user_id, saved_channel=channel_id)
         except Exception:
             logger.exception("Failed to refresh App Home after source save")
 
@@ -252,11 +284,11 @@ def register_handlers(app: App) -> None:
         if result:
             say(result)
 
-    def _handle_stats(raw_text: str, channel_id: str, user_id: str, say):
+    def _handle_stats(raw_text: str, channel_id: str, user_id: str, bot_user_id: str, say):
         target_user = user_id
         mentions = re.findall(r"<@(U[A-Z0-9]+)>", raw_text)
         for m in mentions:
-            if m != user_id:
+            if m != user_id and m != bot_user_id:
                 target_user = m
                 break
 
