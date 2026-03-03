@@ -433,7 +433,7 @@ class RoundManager:
             remaining = round_.total_questions - round_.current_question_index
             await self._post_msg(
                 channel_id,
-                f":pause_button: *Round paused* — {CONSECUTIVE_SKIP_LIMIT} questions in a row went unanswered. "
+                f":pause: *Round paused* — {CONSECUTIVE_SKIP_LIMIT} questions in a row went unanswered. "
                 f"{remaining} question{'s' if remaining != 1 else ''} remaining. "
                 f"Mention me with `resume` to continue!",
             )
