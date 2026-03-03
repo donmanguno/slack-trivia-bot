@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+!.env.example
+trivia.db
+tests/
+pytest.ini
+*.md
+.git/
+.gitignore
+Dockerfile
+.dockerignore
