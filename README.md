@@ -19,13 +19,13 @@ A round-based trivia bot for Slack that fetches questions from multiple free API
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app
 2. Enable **Socket Mode** and generate an App-Level Token with `connections:write` scope
 3. Under **OAuth & Permissions**, add these bot token scopes:
-   - `app_mentions:read`
-   - `channels:history`
-   - `chat:write`
-   - `users:read`
+  - `app_mentions:read`
+  - `channels:history`
+  - `chat:write`
+  - `users:read`
 4. Under **Event Subscriptions**, subscribe to:
-   - `app_mention`
-   - `message.channels`
+  - `app_mention`
+  - `message.channels`
 5. Install the app to your workspace
 
 ### 2. Configure Environment
@@ -73,8 +73,7 @@ The SQLite database is stored in the `/data` volume so scores persist across con
 ### Push to GitHub Container Registry (ghcr.io)
 
 1. Generate a GitHub Personal Access Token with the `write:packages` scope at
-   [github.com/settings/tokens/new](https://github.com/settings/tokens/new)
-
+  [github.com/settings/tokens/new](https://github.com/settings/tokens/new)
 2. Export the token and run the push script:
 
 ```bash
@@ -84,7 +83,7 @@ export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 ./scripts/push-ghcr.sh <your-github-username> v1.0.0
 ```
 
-3. Pull and run from any machine:
+1. Pull and run from any machine:
 
 ```bash
 docker run -d --restart unless-stopped \
@@ -100,15 +99,17 @@ docker run -d --restart unless-stopped \
 
 All commands are triggered by @mentioning the bot:
 
-| Command | Description |
-|---|---|
-| `@trivia start [n]` | Start a round of n questions (default 10) |
-| `@trivia resume` | Resume a paused round |
-| `@trivia scores` | Show channel leaderboard (top 10) |
-| `@trivia skip` | Vote to skip the current question (needs 2 votes) |
-| `@trivia stats [@user]` | Show stats for a user (or yourself) |
-| `@trivia categories` | List available question categories |
-| `@trivia help` | Show available commands |
+
+| Command                 | Description                                       |
+| ----------------------- | ------------------------------------------------- |
+| `@trivia start [n]`     | Start a round of n questions (default 10)         |
+| `@trivia resume`        | Resume a paused round                             |
+| `@trivia scores`        | Show channel leaderboard (top 10)                 |
+| `@trivia skip`          | Vote to skip the current question (needs 2 votes) |
+| `@trivia stats [@user]` | Show stats for a user (or yourself)               |
+| `@trivia categories`    | List available question categories                |
+| `@trivia help`          | Show available commands                           |
+
 
 During an active question, simply type your answer in the channel -- no @mention needed.
 
@@ -123,4 +124,4 @@ During an active question, simply type your answer in the channel -- no @mention
 
 - If the same user answers 5 consecutive questions, the round freezes and that user is locked out from starting new rounds for 10 minutes
 - If 3 questions in a row go unanswered (auto-skipped after 60s), the round pauses until someone resumes it
-# slack-trivia-bot
+
