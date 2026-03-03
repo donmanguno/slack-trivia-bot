@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Links this image to the GitHub repository (used by ghcr.io)
+LABEL org.opencontainers.image.source="https://github.com/donmanguno/slack-trivia-bot"
+
 # Prevents .pyc files and enables unbuffered stdout/stderr for Docker logs
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
