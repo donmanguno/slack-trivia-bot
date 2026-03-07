@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from trivia.questions import util
+
 from .base import Difficulty, QuestionProvider, TriviaQuestion
 
 logger = logging.getLogger(__name__)
@@ -138,6 +140,7 @@ class JsonFileProvider(QuestionProvider):
         for raw in sample:
             q = self._parse(raw)
             if q:
+                q.question = util.html_to_markdown(q.question)
                 questions.append(q)
             if len(questions) >= amount:
                 break

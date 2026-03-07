@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import asyncio
 import logging
 import time
@@ -18,11 +19,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 QUESTION_TIMEOUT_SECONDS = 60
-BETWEEN_QUESTIONS_SECONDS = 10
-CONSECUTIVE_SKIP_LIMIT = 3
+BETWEEN_QUESTIONS_SECONDS = 2
+CONSECUTIVE_SKIP_LIMIT = 3 if os.getenv("ENVIRONMENT") == "production" else 10
 SOLO_PLAY_THRESHOLD = 5
 FREEZE_DURATION_MINUTES = 10
-SKIP_VOTES_REQUIRED = 2
+SKIP_VOTES_REQUIRED = 2 if os.getenv("ENVIRONMENT") == "production" else 1
 
 
 def _resolve_letter_choice(text: str, choices: list[str]) -> str | None:
@@ -109,7 +110,9 @@ class RoundManager:
         pool: Optional[QuestionPool] = None,
     ) -> str | None:
         """Start a new round. Returns error message or None on success."""
-        freeze = self._db.get_freeze(user_id, channel_id)
+        freeze = None
+        if os.getenv("ENVIRONMENT") == "production":
+            freeze = self._db.get_freeze(user_id, channel_id)
         if freeze:
             remaining = int((freeze.expires_at.timestamp() - time.time()) / 60) + 1
             logger.info("User %s is frozen in %s for %d more minute(s)", user_id, channel_id, remaining)
