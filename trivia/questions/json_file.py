@@ -140,7 +140,6 @@ class JsonFileProvider(QuestionProvider):
         for raw in sample:
             q = self._parse(raw)
             if q:
-                q.question = util.html_to_markdown(q.question)
                 questions.append(q)
             if len(questions) >= amount:
                 break

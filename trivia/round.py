@@ -9,6 +9,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Callable, Optional
 
 from trivia.matching.fuzzy import AnswerCheck, check_answer
+from trivia.questions import util
 from trivia.questions.base import QuestionPool, TriviaQuestion
 from trivia.scoring.manager import ScoreManager
 from trivia.storage.database import Database
@@ -267,6 +268,8 @@ class RoundManager:
 
         try:
             question = await round_.pool.get_question()
+            question.question = util.html_to_markdown(question.question)
+
         except Exception:
             logger.exception("Failed to fetch question for %s", channel_id)
             await self._post_msg(

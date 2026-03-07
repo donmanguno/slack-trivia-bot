@@ -1,8 +1,13 @@
 import re
+import logging
+logger = logging.getLogger(__name__)
+
 
 def html_to_markdown(text: str) -> str:
+		logger.debug(f"html_to_markdown: input: {text}...")
 		text = strip_extraneous_html(text)
 		text = replace_html_with_mrkdwn(text)
+		logger.debug(f"html_to_markdown: output: {text}")
 		return text
 
 def strip_extraneous_html(text: str) -> str:
@@ -14,11 +19,11 @@ def strip_extraneous_html(text: str) -> str:
 		text = re.sub(r'</span.*?>', "", text)
 		text = text.replace("<u>", "")
 		text = text.replace("</u>", "")
-		text = text.replace("<br>", "\n")
-		text = text.replace("&nbsp;", " ")
 		return text
 
 def replace_html_with_mrkdwn(content: str) -> str:
+		text = text.replace("&nbsp;", " ")
+		content = re.sub(r'<br( ?/)?>', "\n", content)
 		content = re.sub(r'<strong>(.*?)</strong>', r'*\1*', content)
 		content = re.sub(r'<h[1-6]>(.*?)</h[1-6]>', r'*\1*', content)
 		content = re.sub(r'<i>(.*?)</i>', r'_\1_', content)
