@@ -21,28 +21,28 @@ def strip_extraneous_html(text: str) -> str:
 		text = text.replace("</u>", "")
 		return text
 
-def replace_html_with_mrkdwn(content: str) -> str:
+def replace_html_with_mrkdwn(text: str) -> str:
 		text = text.replace("&nbsp;", " ")
-		content = re.sub(r'<br( ?/)?>', "\n", content)
-		content = re.sub(r'<strong>(.*?)</strong>', r'*\1*', content)
-		content = re.sub(r'<h[1-6]>(.*?)</h[1-6]>', r'*\1*', content)
-		content = re.sub(r'<i>(.*?)</i>', r'_\1_', content)
-		content = re.sub(r'<s>(.*?)</s>', r'~\1~', content)
-		content = re.sub(r'~\s*([ \t\_\*]*)\s*~', r'\1', content) # remove consecutive pairs of ~
-		content = re.sub(r'\*([ \t\_\~]*)\*', r'\1', content) # remove consecutive pairs of *
-		content = re.sub(r'_\s*([ \t\*\~]*)\s*_', r'\1', content) # remove consecutive pairs of _
-		content = re.sub(r'<img .*?src=\"(.*?)\".*?>', r'<\1|>', content)
-		content = re.sub(r'<a .*?href=\"(.*?)\".*?>(.*?)</a>', r'<\1|\2>', content)
-		content = re.sub(r'(?<![<|])(https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/\/=;]*))', r'<\1|>', content)
-		content = re.sub(r'<customemoji .*?alt=\"(.*?)\".*?><\/customemoji>', r':\1:', content)
+		text = re.sub(r'<br( ?/)?>', "\n", text)
+		text = re.sub(r'<strong>(.*?)</strong>', r'*\1*', text)
+		text = re.sub(r'<h[1-6]>(.*?)</h[1-6]>', r'*\1*', text)
+		text = re.sub(r'<i>(.*?)</i>', r'_\1_', text)
+		text = re.sub(r'<s>(.*?)</s>', r'~\1~', text)
+		text = re.sub(r'~\s*([ \t\_\*]*)\s*~', r'\1', text) # remove consecutive pairs of ~
+		text = re.sub(r'\*([ \t\_\~]*)\*', r'\1', text) # remove consecutive pairs of *
+		text = re.sub(r'_\s*([ \t\*\~]*)\s*_', r'\1', text) # remove consecutive pairs of _
+		text = re.sub(r'<img .*?src=\"(.*?)\".*?>', r'<\1|>', text)
+		text = re.sub(r'<a .*?href=\"(.*?)\".*?>(.*?)</a>', r'<\1|\2>', text)
+		text = re.sub(r'(?<![<|])(https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/\/=;]*))', r'<\1|>', text)
+		text = re.sub(r'<customemoji .*?alt=\"(.*?)\".*?><\/customemoji>', r':\1:', text)
 
-		content = replace_blockquote(content)
-		content = replace_code_block(content)
-		content = re.sub(r'<code>(.*?)</code>', r'`\1`', content) # replace non-codeblock code tags with just the code
-		content = replace_lists(content)
-		content = replace_table(content)
+		text = replace_blockquote(text)
+		text = replace_code_block(text)
+		text = re.sub(r'<code>(.*?)</code>', r'`\1`', text) # replace non-codeblock code tags with just the code
+		text = replace_lists(text)
+		text = replace_table(text)
 
-		return content.strip()
+		return text.strip()
 
 def replace_lists(text: str) -> str:
 		def process_list_content(content, list_type, nesting_levels: dict[str, int]):
