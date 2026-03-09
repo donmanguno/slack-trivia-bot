@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import logging
 
 from rapidfuzz import fuzz
 
@@ -12,6 +13,8 @@ from .normalizer import (
     normalize,
     try_parse_number,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MatchResult(Enum):
@@ -83,7 +86,7 @@ def check_answer(
         best_score = max(best_score, score)
 
     if best_score >= ACCEPT_THRESHOLD:
-        return AnswerCheck(MatchResult.CORRECT, best_score)
+        logger.info(f"AnswerCheck: CORRECT: {user_answer} -> {accepted_norm} (score: {best_score})")
     if best_score >= CLOSE_THRESHOLD:
         return AnswerCheck(MatchResult.CLOSE, best_score)
 
