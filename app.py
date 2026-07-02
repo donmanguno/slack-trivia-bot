@@ -2,7 +2,9 @@ import logging
 import os
 import threading
 import sys
+import io
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from contextlib import redirect_stderr
 
 from dotenv import load_dotenv
 from slack_bolt import App
@@ -65,28 +67,30 @@ def start_health_check_server(port: int = 8080) -> None:
     logger.info(f"Health check server started on port {port}")
 
 
-def setup_error_monitoring(handler: SocketModeHandler) -> None:
+def setup_error_monitoring() -> None:
     """
-    Hook into the Slack Bolt app's error handler to monitor connection errors.
+    Set up error monitoring using a custom log handler that monitors error logs.
     """
     monitor = get_monitor()
-    original_error_handler = app._error_handler
 
-    def error_handler_with_monitoring(error, body):
-        error_msg = str(error)
-        # Check for BrokenPipeError in the error message
-        if "BrokenPipeError" in error_msg or "Broken pipe" in error_msg:
-            monitor.record_error()
-        return original_error_handler(error, body)
+    class ErrorMonitoringHandler(logging.Handler):
+        def emit(self, record):
+            if record.levelno >= logging.ERROR:
+                msg = record.getMessage()
+                if "BrokenPipeError" in msg or "Broken pipe" in msg:
+                    monitor.record_error()
+                    logger.debug(f"Recorded error for health monitoring: {msg}")
 
-    app._error_handler = error_handler_with_monitoring
+    handler = ErrorMonitoringHandler()
+    logging.getLogger("slack_bolt.app").addHandler(handler)
+    logger.info("Error monitoring handler installed")
 
 
 if __name__ == "__main__":
     start_health_check_server()
+    setup_error_monitoring()
 
     handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
-    setup_error_monitoring(handler)
 
     logger.info("Trivia Bot starting (debug=%s)...", _debug)
 

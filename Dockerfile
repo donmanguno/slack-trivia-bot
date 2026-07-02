@@ -30,9 +30,9 @@ RUN mkdir /data
 VOLUME ["/data"]
 
 # Health check: curl the health endpoint every 30s, with a 5s timeout
-# If 3 consecutive checks fail over 90s, mark container unhealthy
-# Docker will automatically restart the container if unhealthy for 30s
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+# Grace period is 60s to allow Socket Mode to establish connection
+# If 3 consecutive checks fail (90s after grace period), mark container unhealthy
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
     CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["python", "app.py"]
