@@ -361,7 +361,7 @@ class RoundManager:
         bonus_text = " :zap: *Speed bonus!*" if speed_bonus else ""
         await self._post_msg(
             round_.channel_id,
-            f":white_check_mark: <@{user_id}> got it! The answer is *{question.correct_answer.strip()}*. "
+            f":white_check_mark: <@{user_id}> got it{f' (score: {result.score:.1f})' if result.score < 100 else ''}! The answer is *{question.correct_answer.strip()}*. "
             f"+{total_points} point{'s' if total_points != 1 else ''}{bonus_text}",
         )
 

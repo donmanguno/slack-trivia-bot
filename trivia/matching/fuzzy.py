@@ -87,6 +87,7 @@ def check_answer(
 
     if best_score >= ACCEPT_THRESHOLD:
         logger.info(f"AnswerCheck: CORRECT: {user_answer} -> {accepted_norm} (score: {best_score})")
+        return AnswerCheck(MatchResult.CORRECT, best_score)
     if best_score >= CLOSE_THRESHOLD:
         return AnswerCheck(MatchResult.CLOSE, best_score)
 
