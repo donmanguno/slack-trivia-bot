@@ -80,7 +80,9 @@ class TestFuzzyMatching:
 
     def test_fuzzy_partial(self):
         result = check_answer("Return of the King", "The Lord of the Rings: The Return of the King")
-        assert result.is_correct
+        assert not result.is_correct
+        assert not result.is_close
+        assert result.score > 0.0
 
     def test_last_name_match(self):
         result = check_answer("Einstein", "Albert Einstein")

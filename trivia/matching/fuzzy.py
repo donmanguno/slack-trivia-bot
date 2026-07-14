@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -39,7 +40,34 @@ class AnswerCheck:
 
 ACCEPT_THRESHOLD = 85.0
 CLOSE_THRESHOLD = 70.0
+INSIGNIFICANT_TOKENS = {"a", "an", "the", "of", "to", "in", "on", "for", "and", "or", "with", "by"}
 
+def significant_tokens(normalized_text: str) -> Counter[str]:
+    return Counter(token for token in normalized_text.split() if token not in INSIGNIFICANT_TOKENS)
+
+def is_insufficient_subset(user_normalized_answer: str, accepted_normalized_answer: str) -> bool:
+    user_counts = significant_tokens(user_normalized_answer)
+    accepted_counts = significant_tokens(accepted_normalized_answer)
+
+    accepted_total = sum(accepted_counts.values())
+    if accepted_total == 0:
+        return False
+
+    is_subset = all(
+        count <= accepted_counts[token]
+        for token, count in user_counts.items()
+    )
+
+    user_total = sum(user_counts.values())
+    is_strict_subset = is_subset and user_total < accepted_total
+
+    if not is_strict_subset:
+        return False
+
+    coverage = user_total / accepted_total
+    distinct_tokens = len(user_counts)
+
+    return distinct_tokens < 2 or coverage < 0.75
 
 def check_answer(
     user_answer: str,
@@ -83,6 +111,9 @@ def check_answer(
 
         # Layer 4: fuzzy matching
         score = fuzz.token_set_ratio(user_norm, accepted_norm)
+        if score >= ACCEPT_THRESHOLD and is_insufficient_subset(user_norm, accepted_norm):
+            score = fuzz.token_sort_ratio(user_norm, accepted_norm)
+
         best_score = max(best_score, score)
 
     if best_score >= ACCEPT_THRESHOLD:
