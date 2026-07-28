@@ -2,9 +2,7 @@ import logging
 import os
 import threading
 import sys
-import io
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from contextlib import redirect_stderr
 
 from dotenv import load_dotenv
 from slack_bolt import App
@@ -50,7 +48,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self.send_response(503)
                 self.send_header("Content-type", "text/plain")
                 self.end_headers()
-                self.wfile.write(b"Unhealthy: Connection stuck in error loop")
+                error_count = monitor.get_error_count()
+                self.wfile.write(f"Unhealthy: {error_count} errors detected".encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -77,9 +76,10 @@ def setup_error_monitoring() -> None:
         def emit(self, record):
             if record.levelno >= logging.ERROR:
                 msg = record.getMessage()
-                if "BrokenPipeError" in msg or "Broken pipe" in msg:
+                # Check for BrokenPipeError in various formats
+                if "BrokenPipeError" in msg or "Broken pipe" in msg or "[Errno 32]" in msg:
+                    logger.debug(f"Captured error message: {msg}")
                     monitor.record_error()
-                    logger.debug(f"Recorded error for health monitoring: {msg}")
 
     handler = ErrorMonitoringHandler()
     logging.getLogger("slack_bolt.app").addHandler(handler)
@@ -87,6 +87,14 @@ def setup_error_monitoring() -> None:
 
 
 if __name__ == "__main__":
+    def emergency_shutdown():
+        """Called by health monitor when too many errors are detected."""
+        logger.critical("Emergency shutdown triggered by health monitor")
+        sys.exit(1)
+
+    monitor = get_monitor()
+    monitor.exit_callback = emergency_shutdown
+
     start_health_check_server()
     setup_error_monitoring()
 

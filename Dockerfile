@@ -29,10 +29,13 @@ RUN mkdir /data
 
 VOLUME ["/data"]
 
-# Health check: curl the health endpoint every 30s, with a 5s timeout
-# Grace period is 60s to allow Socket Mode to establish connection
-# If 3 consecutive checks fail (90s after grace period), mark container unhealthy
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
+# Health check configuration:
+# - start-period: 20s (grace period during startup, monitor won't mark unhealthy)
+# - interval: 5s (check frequently to catch stuck state quickly)
+# - timeout: 3s (max time to wait for response)
+# - retries: 2 (2 failures = 10s to mark unhealthy)
+# Total: After 20s startup grace + 10s of failures = 30s before restart
+HEALTHCHECK --interval=5s --timeout=3s --retries=2 --start-period=20s \
     CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["python", "app.py"]
